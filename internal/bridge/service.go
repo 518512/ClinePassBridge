@@ -19,24 +19,27 @@ import (
 var secretPattern = regexp.MustCompile(`(?i)(?:bearer\s+|sk[-_])[a-z0-9_.-]+`)
 
 type Service struct {
-	credentialMu  sync.Mutex
-	authFiles     map[string]string
-	mu            sync.RWMutex
-	cfg           Config
-	host          HostCall
-	logs          []LogEntry
-	creds         map[string]Credential
-	authDir       string
-	loaded        bool
-	stopped       bool
-	active        sync.WaitGroup
-	streams       map[string]struct{}
-	revoked       map[string]bool
-	stopCh        chan struct{}
-	logWriteError string
-	usageCache    map[string]*usageCacheEntry
-	usageSlots    chan struct{}
-	modelTests    map[string]bool
+	credentialMu       sync.Mutex
+	authFiles          map[string]string
+	mu                 sync.RWMutex
+	cfg                Config
+	host               HostCall
+	logs               []LogEntry
+	creds              map[string]Credential
+	authDir            string
+	loaded             bool
+	stopped            bool
+	active             sync.WaitGroup
+	streams            map[string]struct{}
+	revoked            map[string]bool
+	stopCh             chan struct{}
+	logWriteError      string
+	usageCache         map[string]*usageCacheEntry
+	usageSlots         chan struct{}
+	modelTests         map[string]bool
+	estimates          estimateState
+	estimateActivity   map[string]estimateActivity
+	estimateWriteError string
 }
 
 func NewService() *Service {
@@ -104,6 +107,7 @@ func (s *Service) configure(raw json.RawMessage) error {
 	defer s.mu.Unlock()
 	s.cfg = cfg
 	if !s.loaded {
+		s.loadEstimatesLocked()
 		if b, e := os.ReadFile(filepath.Join(cfg.DataDir, "requests.json")); e == nil {
 			_ = json.Unmarshal(b, &s.logs)
 		}
@@ -310,6 +314,7 @@ func (s *Service) selectedCredential(r ExecutorRequest) (Credential, error) {
 func (s *Service) appendLog(entry LogEntry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.recordEstimateLocked(entry)
 	entry.Error = safeError(errors.New(entry.Error))
 	s.logs = append(s.logs, entry)
 	if len(s.logs) > s.cfg.LogRetention {

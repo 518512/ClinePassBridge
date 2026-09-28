@@ -57,6 +57,10 @@ plugins:
 
 日志中的实际 provider 来自上游响应；未回报时显示“未知”。
 
+「凭据与套餐用量」现支持按账号估计 5 小时、每周、每月的总额度与剩余额度：结合用量比例变化和请求 token，按 [Cline 官网参考价格](https://docs.cline.bot/getting-started/clinepass#reference-pricing)折算 USD；同账号多 Key 共享估算，不同账号独立。采样条件、缓存计费和估算误差见 [套餐用量说明](docs/plan-usage.md#额度估计)。
+
+请求总时长上限（含思考和输出）新装默认 **600 秒**，避免旧默认 180 秒过早截断长任务（[Issue #1](https://github.com/xiao-qiu-qiu/ClinePassBridge/issues/1)）。升级保留已保存的超时设置；原来仍为 180 秒的用户可在「请求与日志设置」手动调至 600 秒或更高，允许范围 10–1800 秒。
+
 非流式三种模式用于应对 Cline 返回格式和偶发空内容，推荐的 `stream-aggregate` 从第一次请求就使用流式上游，客户端仍收到非流式 JSON；它不会消除上游本身的错误。可选的 `native-fallback` 可能产生第二次上游请求。SSE 一旦开始向客户端输出，就不进行透明重试。上游错误、订阅额度与模型可用性仍由 Cline 决定。
 
 CPA v7.3.12 的 Chat Completions 流式接口由宿主封装 SSE，插件提交原始 JSON 并由宿主发送结束标记。标准 `/v1/messages` 路由的 Claude 转换器要求 SSE 输入，插件依据宿主传入的 `request_path` 适配；未携带此元数据的内部 Claude 调用尚未覆盖。

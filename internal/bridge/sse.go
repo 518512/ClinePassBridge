@@ -306,10 +306,33 @@ func observeMetadata(j map[string]any, entry *LogEntry, attempt *Attempt) {
 		apply(str(routing["finalProvider"]), root.path+"provider_metadata.gateway.routing.finalProvider")
 	}
 	if u := object(j["usage"]); u != nil {
-		entry.PromptTokens = number(u["prompt_tokens"])
-		entry.CompletionTokens = number(u["completion_tokens"])
-		entry.CachedTokens = number(object(u["prompt_tokens_details"])["cached_tokens"])
-		entry.ReasoningTokens = number(object(u["completion_tokens_details"])["reasoning_tokens"])
+		// Some SSE frames contain only part of usage. Missing fields must not
+		// erase token counts already reported in a previous frame.
+		if v, ok := u["prompt_tokens"]; ok && v != nil {
+			entry.PromptTokens = number(v)
+			entry.promptReported = true
+		}
+		if v, ok := u["completion_tokens"]; ok && v != nil {
+			entry.CompletionTokens = number(v)
+			entry.completionReported = true
+		}
+		if entry.promptReported && entry.completionReported {
+			entry.UsageReported = true
+		}
+		if d := object(u["prompt_tokens_details"]); d != nil {
+			if v, ok := d["cached_tokens"]; ok && v != nil {
+				entry.CachedTokens = number(v)
+			}
+			if v, ok := d["cache_write_tokens"]; ok && v != nil {
+				entry.CacheWriteTokens, entry.CacheWriteReported = number(v), true
+			}
+		}
+		if v, ok := u["cache_creation_input_tokens"]; ok && v != nil {
+			entry.CacheWriteTokens, entry.CacheWriteReported = number(v), true
+		}
+		if v, ok := object(u["completion_tokens_details"])["reasoning_tokens"]; ok && v != nil {
+			entry.ReasoningTokens = number(v)
+		}
 	}
 }
 func contentStarted(j map[string]any) bool {

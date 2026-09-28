@@ -23,15 +23,18 @@ type usagePlan struct {
 
 // Only display fields cross the management API; upstream account/stripe IDs do not.
 type credentialUsage struct {
-	ID            string       `json:"id"`
-	Limits        []usageLimit `json:"limits"`
-	Plan          *usagePlan   `json:"plan"`
-	UpdatedAt     *time.Time   `json:"updated_at"`
-	PlanUpdatedAt *time.Time   `json:"plan_updated_at"`
-	CheckedAt     *time.Time   `json:"checked_at"`
-	Status        string       `json:"status"`
-	Error         string       `json:"error,omitempty"`
-	PlanError     string       `json:"plan_error,omitempty"`
+	accountHash   string
+	planHash      string
+	Estimate      *accountEstimate `json:"estimate,omitempty"`
+	ID            string           `json:"id"`
+	Limits        []usageLimit     `json:"limits"`
+	Plan          *usagePlan       `json:"plan"`
+	UpdatedAt     *time.Time       `json:"updated_at"`
+	PlanUpdatedAt *time.Time       `json:"plan_updated_at"`
+	CheckedAt     *time.Time       `json:"checked_at"`
+	Status        string           `json:"status"`
+	Error         string           `json:"error,omitempty"`
+	PlanError     string           `json:"plan_error,omitempty"`
 }
 
 type usageCacheEntry struct {
@@ -74,6 +77,7 @@ func (s *Service) credentialUsage(r ManagementRequest) (credentialUsage, error) 
 				// exposes no per-auth override. Never silently bypass an auth proxy.
 				value.Status, value.Error = "proxy_unsupported", "此 CPA 接口暂不支持凭据独立代理的用量查询"
 			}
+			value.Estimate = s.estimateViewLocked(c, value)
 			s.mu.Unlock()
 			return value, nil
 		}
@@ -100,12 +104,14 @@ func (s *Service) credentialUsage(r ManagementRequest) (credentialUsage, error) 
 		}
 		if entry.value.CheckedAt != nil && time.Since(*entry.value.CheckedAt) < ttl {
 			value := entry.value
+			value.Estimate = s.estimateViewLocked(c, value)
 			s.mu.Unlock()
 			return value, nil
 		}
 		entry.done = make(chan struct{})
 		value := entry.value
 		s.mu.Unlock()
+		activity := s.estimateActivitySnapshot()
 
 		// Bound work across tabs/accounts. Quota reads never enter CPA's model scheduler.
 		timer := time.NewTimer(time.Until(deadline))
@@ -128,6 +134,10 @@ func (s *Service) credentialUsage(r ManagementRequest) (credentialUsage, error) 
 		entry.done = nil
 		current, exists := s.creds[credentialID]
 		valid := exists && !s.revoked[credentialID] && usageFingerprint(current) == fingerprint && s.usageCache[credentialID] == entry
+		if valid {
+			s.calibrateEstimateLocked(c, value, activity)
+			value.Estimate = s.estimateViewLocked(c, value)
+		}
 		s.mu.Unlock()
 		if !valid {
 			return credentialUsage{}, fail(409, "凭据已变更，请重新查询用量")
@@ -209,6 +219,8 @@ func (s *Service) fetchCredentialUsage(callbackID string, c Credential, value cr
 	}
 	data, err = s.usageGET(callbackID, c, "/users/me/plan", deadline)
 	var plan *struct {
+		UserID           string `json:"userId"`
+		SubscriptionID   string `json:"subscriptionId"`
 		CurrentPeriodEnd string `json:"currentPeriodEnd"`
 		Plan             *struct {
 			DisplayName string `json:"displayName"`
@@ -222,8 +234,11 @@ func (s *Service) fetchCredentialUsage(callbackID string, c Credential, value cr
 		return value
 	}
 	value.Plan = nil
+	value.accountHash, value.planHash = "", ""
 	if plan != nil && plan.Plan != nil {
 		value.Plan = &usagePlan{Name: plan.Plan.DisplayName, CurrentPeriodEnd: usageTime(plan.CurrentPeriodEnd)}
+		value.accountHash = estimateHash("cline-account", plan.UserID)
+		value.planHash = estimateHash("cline-plan", plan.SubscriptionID+"|"+plan.Plan.DisplayName+"|"+plan.CurrentPeriodEnd)
 	}
 	value.PlanUpdatedAt, value.PlanError = &now, ""
 	return value

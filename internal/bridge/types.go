@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const Version = "0.1.6"
+const Version = "0.1.7"
 const Provider = "cline-pass"
 const PluginID = "clinepassbridge"
 
@@ -90,7 +90,7 @@ type Config struct {
 }
 
 func defaultConfig() Config {
-	return Config{DataDir: "plugins/clinepassbridge-data", BaseURL: "https://api.cline.bot/api/v1", Models: []Model{}, NonstreamMode: "stream-aggregate", TimeoutSeconds: 180, LogRetention: 1000, MaxResponseBytes: 16 << 20}
+	return Config{DataDir: "plugins/clinepassbridge-data", BaseURL: "https://api.cline.bot/api/v1", Models: []Model{}, NonstreamMode: "stream-aggregate", TimeoutSeconds: 600, LogRetention: 1000, MaxResponseBytes: 16 << 20}
 }
 func (c *Config) validate() error {
 	u, e := url.Parse(c.BaseURL)
@@ -132,23 +132,30 @@ type Attempt struct {
 	Error          string `json:"error,omitempty"`
 }
 type LogEntry struct {
-	ID               string    `json:"id"`
-	Time             time.Time `json:"time"`
-	Model            string    `json:"model"`
-	UpstreamModel    string    `json:"upstream_model"`
-	Stream           bool      `json:"stream"`
-	Status           int       `json:"status"`
-	Provider         string    `json:"provider"`
-	ProviderSource   string    `json:"provider_source"`
-	DurationMS       int64     `json:"duration_ms"`
-	TTFTMS           int64     `json:"ttft_ms"`
-	PromptTokens     int64     `json:"prompt_tokens"`
-	CompletionTokens int64     `json:"completion_tokens"`
-	CachedTokens     int64     `json:"cached_tokens"`
-	ReasoningTokens  int64     `json:"reasoning_tokens"`
-	Credential       string    `json:"credential"`
-	Attempts         []Attempt `json:"attempts"`
-	Error            string    `json:"error,omitempty"`
+	promptReported     bool
+	completionReported bool
+	estimateKey        string
+	CredentialID       string    `json:"credential_id,omitempty"`
+	UsageReported      bool      `json:"usage_reported,omitempty"`
+	CacheWriteTokens   int64     `json:"cache_write_tokens,omitempty"`
+	CacheWriteReported bool      `json:"cache_write_reported,omitempty"`
+	ID                 string    `json:"id"`
+	Time               time.Time `json:"time"`
+	Model              string    `json:"model"`
+	UpstreamModel      string    `json:"upstream_model"`
+	Stream             bool      `json:"stream"`
+	Status             int       `json:"status"`
+	Provider           string    `json:"provider"`
+	ProviderSource     string    `json:"provider_source"`
+	DurationMS         int64     `json:"duration_ms"`
+	TTFTMS             int64     `json:"ttft_ms"`
+	PromptTokens       int64     `json:"prompt_tokens"`
+	CompletionTokens   int64     `json:"completion_tokens"`
+	CachedTokens       int64     `json:"cached_tokens"`
+	ReasoningTokens    int64     `json:"reasoning_tokens"`
+	Credential         string    `json:"credential"`
+	Attempts           []Attempt `json:"attempts"`
+	Error              string    `json:"error,omitempty"`
 }
 
 func jsonBytes(v any) []byte      { b, _ := json.Marshal(v); return b }
