@@ -182,6 +182,10 @@
     .credential-bottom .button { min-height: 28px; font-size: 11px; }
     .usage-estimate { display: flex; align-items: baseline; justify-content: flex-end; flex-wrap: wrap; gap: 3px 6px; padding-top: 8px; border-top: 1px solid var(--inset-line); font-size: 11px; color: var(--muted); }
     .usage-estimate-value { color: var(--ink); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .usage-estimate-amount { display: inline-flex; align-items: center; gap: 5px; }
+    .estimate-preliminary { display: inline-flex; flex: 0 0 auto; color: var(--warn); cursor: help; border-radius: 50%; }
+    .estimate-preliminary svg { width: 14px; height: 14px; }
+    .estimate-preliminary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
     .usage-estimate-value.waiting { color: var(--muted); font-size: 11px; font-weight: 400; }
     .usage-estimate-samples { flex-basis: 100%; text-align: right; font-size: 10px; line-height: 1.5; font-variant-numeric: tabular-nums; }
     .estimate-info-button { display: flex; align-items: center; gap: 4px; margin-top: 3px; padding: 2px 0; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 10px; font-weight: 400; cursor: pointer; }
@@ -194,10 +198,13 @@
     #estimateDialogContent { overflow-y: auto; min-height: 0; }
     #estimateDialogAccount { margin: 0 0 12px; overflow-wrap: anywhere; flex-shrink: 0; }
     #estimateDialog .dialog-actions { flex-shrink: 0; }
-    .estimate-detail p { margin: 4px 0; line-height: 1.55; }
+    .estimate-detail p { margin: 10px 0; line-height: 1.65; }
     .estimate-detail a { color: var(--ink); text-decoration: underline; }
-    .estimate-samples { display: grid; gap: 5px; padding: 5px 0; }
-    .estimate-samples > div { display: grid; grid-template-columns: 42px 1fr; gap: 7px; }
+    .estimate-samples { display: grid; gap: 14px; padding: 4px 0 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+    .estimate-samples > div { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px; line-height: 1.8; }
+    .estimate-formula { color: var(--ink); }
+    .estimate-actual { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .estimate-sample-state { display: block; font-size: 11px; }
     .credential-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
     .credential-footer .pagination { margin: 0; }
     @media (max-width: 860px) { .credential-row { grid-template-columns: 1fr; gap: 12px; } .credential-estimate-band { grid-template-columns: 1fr; gap: 8px; } .usage-meters { gap: 12px; } }
@@ -339,7 +346,7 @@
           <span class="count" id="credentialCount"></span>
         </div>
         <div id="credentialList"><div class="empty">正在读取凭据…</div></div>
-        <div class="credential-footer"><p class="panel-hint">当前页约每分钟更新 · 时间为本地时区</p><div class="pagination" id="credentialPagination" hidden><button class="button compact" id="credentialPrev" type="button">上一页</button><span id="credentialPageInfo"></span><button class="button compact" id="credentialNext" type="button">下一页</button></div></div>
+        <div class="credential-footer"><p class="panel-hint">后台按账号约每分钟采样 · 时间为本地时区</p><div class="pagination" id="credentialPagination" hidden><button class="button compact" id="credentialPrev" type="button">上一页</button><span id="credentialPageInfo"></span><button class="button compact" id="credentialNext" type="button">下一页</button></div></div>
         <p class="inline-state" id="credentialState" role="status"></p>
       </div>
       <div class="config-grid">
@@ -801,31 +808,56 @@
     function estimateMoney(range) {
       if (!range || !Number.isFinite(range.low) || !Number.isFinite(range.high)) return '—';
       const format = (value) => value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      return Math.abs(range.high - range.low) < .005 ? `$${format(range.low)}` : `$${format(range.low)} – ${format(range.high)}`;
+      return `$${format((range.low + range.high) / 2)}`;
     }
     function usageEstimateHTML(item, type) {
       if (!Object.hasOwn(usageLabels, type)) return '';
       const usage = credentialView.usage.get(item.id);
       const value = usage?.estimate?.windows?.find((w) => w.type === type);
-      const money = value?.total ? estimateMoney(value.total) : '采样中';
+      const money = value?.total ? `≈ ${estimateMoney(value.total)}` : '采样中';
+      const sourceHint = value?.derived_from === 'weekly' ? '月总额度 = 周总额度 × 2；采样次数、待校准请求及百分比变化均来自每周窗口。月剩余额度按实际月用量计算。' : '';
+      const preliminaryHint = `${sourceHint ? '周额度仍为初步估计，月额度随周额度折算。' : ''}初步估计：样本较少，数据可能不准。百分比取整可能造成较大误差，累计变化达到 2 个百分点后自动校准。`;
+      const warning = value?.total && value.preliminary ? `<span class="estimate-preliminary" role="img" tabindex="0" title="${esc(preliminaryHint)}" aria-label="${esc(preliminaryHint)}"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="#d8b45c" fill-opacity=".2" stroke="#d8b45c" stroke-width="1.5"/><path d="M10 5.8v4.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="10" cy="13.8" r="1" fill="currentColor"/></svg></span>` : '';
       const stale = usage?.status !== 'ok' || !usage?.updated_at || Date.now() - Date.parse(usage.updated_at) > 90000;
-      const hint = value?.remaining && !stale ? `预计剩余 ${estimateMoney(value.remaining)}（USD 参考值）` : stale && value?.total ? '上次估算 · 等待用量更新' : value?.note || '等待可用的额度变化';
-      const samples = `已采样 ${Number(value?.samples || 0).toLocaleString()} 段 · ${Number(value?.requests || 0).toLocaleString()} 次请求`;
+      const hint = [value?.remaining && !stale ? `预计剩余 ≈ ${estimateMoney(value.remaining)}（USD 参考值）` : stale && value?.total ? '上次估算 · 等待用量更新' : '', sourceHint, value?.preliminary ? preliminaryHint : '', value?.note || '等待可用的额度变化', value?.pending_incomplete > 0 ? `待校准请求中有 ${Number(value.pending_incomplete).toLocaleString()} 次用量不完整` : '', '按全部额度消费均经 CPA 本插件记录计算，金额为单值估算。'].filter(Boolean).join(' · ');
+      const samples = `${value?.historical ? value.preliminary ? '历史初步采样' : '历史采样' : value?.preliminary ? '初步采样' : '已采样'} ${Number(value?.samples || 0).toLocaleString()} 段 · ${Number(value?.requests || 0).toLocaleString()} 次请求`;
       const pending = value?.pending_requests > 0 ? ` · 待校准 ${Number(value.pending_requests).toLocaleString()} 次` : '';
-      return `<div class="usage-estimate"><span class="usage-estimate-value ${value?.total ? '' : 'waiting'}" title="${esc(hint)}">${esc(money)}</span><div class="usage-estimate-samples">${esc(samples + pending)}</div></div>`;
+      return `<div class="usage-estimate"><span class="usage-estimate-amount"><span class="usage-estimate-value ${value?.total ? '' : 'waiting'}" title="${esc(hint)}">${esc(money)}</span>${warning}</span><div class="usage-estimate-samples" title="${esc(hint)}">${esc(samples + pending)}</div></div>`;
     }
     function estimateHTML(item) {
       const usage = credentialView.usage.get(item.id), estimate = usage?.estimate;
       const windows = Array.isArray(estimate?.windows) ? estimate.windows : [];
+      const actual = (value) => `<span class="estimate-actual">${esc(value)}</span>`;
+      const weekly = windows.find((entry) => entry.type === 'weekly');
       const samples = Object.entries(usageLabels).map(([type, label]) => {
         const w = windows.find((entry) => entry.type === type);
-        const stats = w?.samples ? `${Number(w.samples).toLocaleString()} 段样本 · ${Number(w.requests).toLocaleString()} 次请求 · ${Number(w.tokens).toLocaleString()} tokens · 折算 ${estimateMoney(w.sample_cost)} · 额度增加 ${Number(w.percent_change).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 个百分点` : '尚无完整样本';
-        const pending = w?.pending_requests > 0 ? `待校准 ${Number(w.pending_requests).toLocaleString()} 次 · 累计增加 ${Number(w.pending_percent || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 个百分点` : '';
-        const remaining = w?.remaining && usage?.status === 'ok' && Date.now() - Date.parse(usage.updated_at) <= 90000 ? `预计剩余 ${estimateMoney(w.remaining)}` : '';
-        return `<div><strong>${esc(label)}</strong><span>${esc([remaining, stats, pending].filter(Boolean).join(' · '))}<br>${esc(w?.note || estimate?.note || '成功查询套餐后开始采样')}</span></div>`;
+        let formula = type === 'monthly' ? '等待周额度估值' : '等待用量变化后计算';
+        if (w?.total && type === 'monthly' && weekly?.total) {
+          formula = `周总额度 ${actual(estimateMoney(weekly.total))} × ${actual('2')} ≈ ${actual(estimateMoney(w.total))}`;
+        } else if (w?.total && w?.sample_cost && Number.isFinite(w.sample_cost.low) && Number.isFinite(w.sample_cost.high) && Number.isFinite(w.percent_change) && w.percent_change > 0) {
+          const cost = ((w.sample_cost.low + w.sample_cost.high) / 2).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+          const delta = w.percent_change.toLocaleString('zh-CN', { maximumFractionDigits: 6 });
+          formula = `样本消费 ${actual(`$${cost}`)} ÷ 用量增量 ${actual(`${delta}%`)} ≈ ${actual(estimateMoney(w.total))}`;
+        }
+        const details = w?.samples ? `${Number(w.samples).toLocaleString()} 段样本 · ${Number(w.requests).toLocaleString()} 次请求 · ${Number(w.tokens).toLocaleString()} tokens${usageDate(w.updated_at) ? ` · 样本更新于 ${usageDate(w.updated_at)}` : ''}` : '';
+        const status = [w?.historical ? '沿用历史样本' : '', w?.preliminary ? '初步估计' : ''].filter(Boolean).join(' · ');
+        return `<div><strong>${esc(label)}</strong><span title="${esc(details)}"><span class="estimate-formula">${formula}</span>${status ? `<span class="estimate-sample-state">${esc(status)}</span>` : ''}</span></div>`;
       }).join('');
-      const shared = estimate?.shared_credentials > 1 ? `同账号 ${estimate.shared_credentials} 个凭据共享估算` : '独立账号采样';
-      return `<p>${esc(shared)} · USD 参考值</p><div class="estimate-samples">${samples}</div><p>${esc(estimate?.note || '查询套餐后自动识别账号，同账号多个 Key 合并统计。')}。总额度 = 样本参考消费 ÷ 已用比例变化；显示区间包含百分比取整误差。</p><p>每次刷新用量时校准，关闭页面仍累计请求。额度重置、用量下降、计价缺失或请求不完整时重新采样；5 小时为滚动窗口，仅作参考。区间越窄，样本越充分。</p><p><a href="https://docs.cline.bot/getting-started/clinepass#reference-pricing" target="_blank" rel="noopener noreferrer">Cline 官网参考计价</a> · 2026-09-28 快照。缓存读取、写入分别计价，推理 token 不重复计入输出。DeepSeek V4 Pro 使用峰谷价范围；未知模型（含 MiMo V2.6）不套用旧型号价格。美元为用量折算值，不是套餐售价或官方余额。</p>${estimate?.persistence_error ? `<p class="error-text">${esc(estimate.persistence_error)}</p>` : ''}`;
+      const shared = estimate?.shared_credentials > 1 ? `同账号 ${actual(Number(estimate.shared_credentials).toLocaleString())} 个凭据合并采样。` : '';
+      return `<div class="estimate-samples">${samples}</div><p>以上结果为估计总额度（USD），与卡片金额一致。${shared}</p><p>仅记录经 CPA 本插件的请求，无法估计未流经 CPA 的流量。</p><p>用量增加 1 个百分点开始估算，达到 2 个百分点校准。后台约每分钟采样；周期重置后沿用历史估值，新样本校准后更新。</p><p><a href="https://docs.cline.bot/getting-started/clinepass#reference-pricing" target="_blank" rel="noopener noreferrer">Cline 官网计价 ↗</a> · 采用 2026-09-28 价格快照。缓存读写分别计价，DeepSeek V4 Pro 取峰谷均价；缺失用量或未列价模型的消费不计入。金额为用量折算值，非套餐售价。</p>${estimate?.persistence_error ? `<p class="error-text">${esc(estimate.persistence_error)}</p>` : ''}`;
+    }
+    function refreshEstimateDialog() {
+      const dialog = $('estimateDialog');
+      if (!dialog.open) return;
+      const item = credentialView.items.find((entry) => entry.id === dialog.dataset.credentialId);
+      if (!item) { dialog.close(); return; }
+      $('estimateDialogAccount').textContent = item.label || item.id;
+      const content = $('estimateDialogContent'), html = estimateHTML(item);
+      if (content.innerHTML !== html) {
+        const scroll = content.scrollTop;
+        content.innerHTML = html;
+        content.scrollTop = scroll;
+      }
     }
     function usagePlanHTML(id) {
       const usage = credentialView.usage.get(id);
@@ -836,6 +868,7 @@
       return `${esc(name)}${end ? ` · 本期至 ${esc(end)}` : ''}${outdated ? ' · 套餐信息待更新' : ''}`;
     }
     function updateUsageRow(id) {
+      if ($('estimateDialog').dataset.credentialId === id) refreshEstimateDialog();
       const item = credentialView.items.find((entry) => entry.id === id);
       const row = [...$('credentialList').children].find((node) => node.dataset.id === id);
       if (!item || !row) return;
@@ -852,6 +885,7 @@
         const ids = new Set(credentialView.items.map((item) => item.id));
         for (const id of credentialView.usage.keys()) if (!ids.has(id)) credentialView.usage.delete(id);
         for (const id of credentialView.pending.keys()) if (!ids.has(id)) credentialView.pending.delete(id);
+        refreshEstimateDialog();
         syncModelTestCredentials();
       }
       if (focusID) {
@@ -1176,9 +1210,9 @@
       if (estimateButton) {
         const item = credentialView.items.find((entry) => entry.id === estimateButton.dataset.estimateId);
         if (!item) return;
-        $('estimateDialogAccount').textContent = item.label || item.id;
-        $('estimateDialogContent').innerHTML = estimateHTML(item);
+        $('estimateDialog').dataset.credentialId = item.id;
         $('estimateDialog').showModal();
+        refreshEstimateDialog();
         return;
       }
       const refresh = event.target.closest('.refresh-usage');

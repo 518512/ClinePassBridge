@@ -57,7 +57,7 @@ plugins:
 
 日志中的实际 provider 来自上游响应；未回报时显示“未知”。
 
-「凭据与套餐用量」现支持按账号估计 5 小时、每周、每月的总额度与剩余额度：结合用量比例变化和请求 token，按 [Cline 官网参考价格](https://docs.cline.bot/getting-started/clinepass#reference-pricing)折算 USD；同账号多 Key 共享估算，不同账号独立。采样条件、缓存计费和估算误差见 [套餐用量说明](docs/plan-usage.md#额度估计)。
+「凭据与套餐用量」现支持按账号估计 5 小时、每周、每月的总额度与剩余额度：5 小时/每周结合用量比例变化和请求 token，月总额度按周总额度的两倍估算，按 [Cline 官网参考价格](https://docs.cline.bot/getting-started/clinepass#reference-pricing)折算 USD；关闭页面仍继续采样，同账号多 Key 共享估算，不同账号独立。额度增长 1 个百分点先显示带黄色提示的初步估值，累计 2 个百分点后校准。额度周期重置后继续显示上次有效估值，新周期采够样本后自动更新。失败或缺失用量时保留已知消费，结果以单值展示，误差原因放在悬停提示中。采样条件、缓存计费和估算误差见 [套餐用量说明](docs/plan-usage.md#额度估计)。
 
 请求总时长上限（含思考和输出）新装默认 **600 秒**，避免旧默认 180 秒过早截断长任务（[Issue #1](https://github.com/xiao-qiu-qiu/ClinePassBridge/issues/1)）。升级保留已保存的超时设置；原来仍为 180 秒的用户可在「请求与日志设置」手动调至 600 秒或更高，允许范围 10–1800 秒。
 

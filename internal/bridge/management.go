@@ -18,6 +18,7 @@ var ui embed.FS
 const apiBase = "/v0/management/clinepassbridge"
 
 func (s *Service) registerManagement(raw json.RawMessage) (any, error) {
+	s.startUsageSampler()
 	routes := []map[string]string{}
 	for _, p := range []string{"status", "logs", "models", "config", "credentials", "credentials/usage"} {
 		routes = append(routes, map[string]string{"Method": "GET", "Path": apiBase + "/" + p})

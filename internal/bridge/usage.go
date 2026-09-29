@@ -111,13 +111,14 @@ func (s *Service) credentialUsage(r ManagementRequest) (credentialUsage, error) 
 		entry.done = make(chan struct{})
 		value := entry.value
 		s.mu.Unlock()
-		activity := s.estimateActivitySnapshot()
+		var activity map[string]estimateActivity
 
 		// Bound work across tabs/accounts. Quota reads never enter CPA's model scheduler.
 		timer := time.NewTimer(time.Until(deadline))
 		select {
 		case s.usageSlots <- struct{}{}:
 			timer.Stop()
+			activity = s.estimateActivitySnapshot()
 			value = s.fetchCredentialUsage(r.HostCallbackID, c, value, deadline)
 			<-s.usageSlots
 		case <-s.stopCh:
@@ -136,6 +137,7 @@ func (s *Service) credentialUsage(r ManagementRequest) (credentialUsage, error) 
 		valid := exists && !s.revoked[credentialID] && usageFingerprint(current) == fingerprint && s.usageCache[credentialID] == entry
 		if valid {
 			s.calibrateEstimateLocked(c, value, activity)
+			s.shareAccountUsageLocked(credentialID, value)
 			value.Estimate = s.estimateViewLocked(c, value)
 		}
 		s.mu.Unlock()

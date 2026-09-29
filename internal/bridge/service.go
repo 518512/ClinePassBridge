@@ -19,31 +19,33 @@ import (
 var secretPattern = regexp.MustCompile(`(?i)(?:bearer\s+|sk[-_])[a-z0-9_.-]+`)
 
 type Service struct {
-	credentialMu       sync.Mutex
-	authFiles          map[string]string
-	mu                 sync.RWMutex
-	cfg                Config
-	host               HostCall
-	logs               []LogEntry
-	creds              map[string]Credential
-	authDir            string
-	loaded             bool
-	stopped            bool
-	active             sync.WaitGroup
-	streams            map[string]struct{}
-	revoked            map[string]bool
-	stopCh             chan struct{}
-	logWriteError      string
-	usageCache         map[string]*usageCacheEntry
-	usageSlots         chan struct{}
-	modelTests         map[string]bool
-	estimates          estimateState
-	estimateActivity   map[string]estimateActivity
-	estimateWriteError string
+	credentialMu        sync.Mutex
+	authFiles           map[string]string
+	mu                  sync.RWMutex
+	cfg                 Config
+	host                HostCall
+	logs                []LogEntry
+	creds               map[string]Credential
+	authDir             string
+	loaded              bool
+	stopped             bool
+	active              sync.WaitGroup
+	streams             map[string]struct{}
+	revoked             map[string]bool
+	stopCh              chan struct{}
+	logWriteError       string
+	usageCache          map[string]*usageCacheEntry
+	usageSlots          chan struct{}
+	usageSamplerStarted bool
+	usageWake           chan struct{}
+	modelTests          map[string]bool
+	estimates           estimateState
+	estimateActivity    map[string]estimateActivity
+	estimateWriteError  string
 }
 
 func NewService() *Service {
-	return &Service{cfg: defaultConfig(), creds: map[string]Credential{}, authFiles: map[string]string{}, streams: map[string]struct{}{}, revoked: map[string]bool{}, stopCh: make(chan struct{}), usageCache: map[string]*usageCacheEntry{}, usageSlots: make(chan struct{}, 3)}
+	return &Service{cfg: defaultConfig(), creds: map[string]Credential{}, authFiles: map[string]string{}, streams: map[string]struct{}{}, revoked: map[string]bool{}, stopCh: make(chan struct{}), usageCache: map[string]*usageCacheEntry{}, usageSlots: make(chan struct{}, 3), usageWake: make(chan struct{}, 1)}
 }
 func (s *Service) SetHost(h func(string, any, any) error) { s.mu.Lock(); s.host = h; s.mu.Unlock() }
 func (s *Service) call(method string, in, out any) error {
@@ -267,6 +269,7 @@ func (s *Service) parseAuth(raw json.RawMessage) (any, error) {
 		s.authDir = r.Host.AuthDir
 	}
 	s.mu.Unlock()
+	s.wakeUsageSampler()
 	return map[string]any{"Handled": true, "Auth": authData(c, r.FileName)}, nil
 }
 func (s *Service) refreshAuth(raw json.RawMessage) (any, error) {
